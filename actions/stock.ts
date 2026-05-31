@@ -60,10 +60,27 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
       stock_awal = existingLog.stock_awal 
     }
 
+    // ... [kode sebelumnya di dalam for loop tetap sama]
+
     // Ekstrak angka dari array berdasarkan index, fallback ke 0 jika kosong
     const inputQtyIn = qtysIn[i] ? parseInt(qtysIn[i]) : 0;
     const inputQtyOutOk = qtysOutOk[i] ? parseInt(qtysOutOk[i]) : 0;
     const inputQtyOutNg = qtysOutNg[i] ? parseInt(qtysOutNg[i]) : 0;
+
+    // LOGIKA PENJUMLAHAN AKUMULATIF (MENGURANGI BEBAN KOGNITIF LEADER)
+    // Jika data sudah ada, sistem akan menjumlahkan nilai lama dengan input baru.
+    // Jika belum ada (undefined), sistem akan menganggap nilai lama adalah 0.
+    const accumulatedQtyIn = formType === 'IN' 
+      ? (existingLog?.qty_in || 0) + inputQtyIn 
+      : (existingLog?.qty_in || 0);
+
+    const accumulatedQtyOutOk = formType === 'OUT' 
+      ? (existingLog?.qty_out_ok || 0) + inputQtyOutOk 
+      : (existingLog?.qty_out_ok || 0);
+
+    const accumulatedQtyOutNg = formType === 'OUT' 
+      ? (existingLog?.qty_out_ng || 0) + inputQtyOutNg 
+      : (existingLog?.qty_out_ng || 0);
 
     const payload = {
       part_id,
@@ -71,9 +88,9 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
       shift,
       stock_awal,
       target: 0, 
-      qty_in: formType === 'IN' ? inputQtyIn : (existingLog?.qty_in || 0),
-      qty_out_ok: formType === 'OUT' ? inputQtyOutOk : (existingLog?.qty_out_ok || 0),
-      qty_out_ng: formType === 'OUT' ? inputQtyOutNg : (existingLog?.qty_out_ng || 0),
+      qty_in: accumulatedQtyIn,
+      qty_out_ok: accumulatedQtyOutOk,
+      qty_out_ng: accumulatedQtyOutNg,
       leader_id: user.id
     }
 
@@ -85,8 +102,8 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
       console.error(`Error upsert stock for part ${part_id}:`, error.message)
       return { error: `Gagal menyimpan material ke-${i + 1}. Proses dihentikan.` }
     }
-  }
+  } // <-- Penutup for loop
 
   revalidatePath('/leader/dashboard')
-  return { error: '', success: `${partIds.length} Data Material ${formType} berhasil direkam!` }
+  return { error: '', success: `${partIds.length} Data Material ${formType} berhasil direkam (ditambahkan ke total shift)!` }
 }

@@ -18,7 +18,7 @@ export default function LaporanPage() {
   const isMultiDay = startDate !== endDate
 
   const handleDownloadPDF = () => {
-    alert('Fitur Generate PDF akan kita kerjakan besok setelah template siap!')
+    window.open(`/api/export/pdf-harian?date=${startDate}`, '_blank')
   }
 
   const handleDownloadExcel = () => {

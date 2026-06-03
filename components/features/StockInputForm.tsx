@@ -61,7 +61,6 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
         {state.error && <div className="mb-6 p-3 bg-red-50 border border-red-100 text-red-600 rounded-md text-sm">{state.error}</div>}
         {state.success && <div className="mb-6 p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-md text-sm font-semibold">{state.success}</div>}
 
-        {/* REVISI CSS: h-auto dan whitespace-normal agar tidak bertabrakan di HP */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'IN' | 'OUT')} className="w-full mb-6">
           <TabsList className="grid w-full grid-cols-2 h-auto min-h-[3.5rem] bg-slate-100">
             <TabsTrigger value="IN" className="h-full py-2 px-1 text-[11px] sm:text-sm font-semibold tracking-wide whitespace-normal text-center leading-tight">
@@ -76,7 +75,8 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
         <form ref={formRef} action={formAction} className="space-y-6">
           <input type="hidden" name="form_type" value={activeTab} />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-slate-200">
+          {/* REVISI: grid-cols diubah jadi 3 untuk memuat Input Nama Operator */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-slate-200">
             <div className="space-y-2">
               <Label>Tanggal</Label>
               <Input type="date" name="date" required defaultValue={today} />
@@ -92,6 +92,11 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
                 </SelectContent>
               </Select>
             </div>
+            {/* FITUR BARU: Input Nama Operator */}
+            <div className="space-y-2">
+              <Label>Nama Operator</Label>
+              <Input type="text" name="operator_name" placeholder="Misal: Budi Santoso" required className="border-slate-300 focus-visible:ring-blue-500" />
+            </div>
           </div>
 
           {/* RENDER FORM DINAMIS */}
@@ -101,7 +106,6 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
               
               return (
                 <div key={entry.id} className="relative p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
-                  {/* Header Kotak Material */}
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-md text-xs tracking-wider">
                       MATERIAL #{index + 1}

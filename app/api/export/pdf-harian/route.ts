@@ -334,20 +334,8 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import fs from 'fs/promises'
 import path from 'path'
 
-// DAFTAR INDUK UTUH 53 MATERIAL AKTIF (100% SINKRON DENGAN SUPABASE)
-const PART_ORDER = [
-  "M2-AA033-B05", "M2-AA030-B05", "M2-AA077-B11", "M2-AA034-B05", "M2-AA029-B05",
-  "M2-AA072-A08", "M2-AA041-B05", "M2-AA028-B05", "M2-AA038-B05", "M4-A1001-D07",
-  "M4-A1002-D07", "M2-BB002-B10", "M2-BB001-B10", "M2-BB004-B10", "M2-BB005-B10",
-  "M2-BB006-B10", "M2-BB010-B10", "M4-A1079-D04", "M4-A1123-D04", "M2-BB019-B10",
-  "M2-BB022-B10", "M2-AA180-B05", "M2-AA185-B05", "M2-BR004-E03", "M2-AP051-C03",
-  "M2-AP052-C03", "M2-AA193-B05", "M2-AA214-B03", "M2-AA215-B05", "M2-BR045-E03",
-  "M2-AA208-B05", "M2-BR075-E03", "BRACKET KWNA", "M4-A1170-D04", "M2-BB049-B10",
-  "M2-BB050-B10", "M2-BB032-810", "M2-BB042-B10", "M2-BB043-810", "M2-BB044-B10",
-  "M2-BB045-810", "M2-BB046-B10", "M2-BB047-B10", "M2-BB051-B10", "M2-AP011-C06",
-  "M2-BR116-E03", "M4-A1069-D04", "CF0015",       "M2-AK032-503", "M2-BB056-B10",
-  "M2-BB057-B10", "M2-BB055-810", "M2-BB054-810"
-]
+// DAFTAR INDUK UTUH 53 MATERIAL AKTIF
+const PART_ORDER = ["M2-AA033-B05","M2-AA030-B05","M2-AA077-B11","M2-AA034-B05","M2-AA029-B05","M2-AA072-A08","M2-AA041-B05","M2-AA028-B05","M2-AA038-B05","M4-A1001-D07","M4-A1002-D07","M2-BB002-B10","M2-BB001-B10","M2-BB004-B10","M2-BB005-B10","M2-BB006-B10","M2-BB010-B10","M4-A1079-D04","M4-A1123-D04","M2-BB019-B10","M2-BB022-B10","M2-AA180-B05","M2-AA185-B05","M2-BR004-E03","M2-AP051-C03","M2-AP052-C03","M2-AA193-B05","M2-AA214-B03","M2-AA215-B05","M2-BR045-E03","M2-AA208-B05","M2-BR075-E03","BRACKET KWNA","M4-A1170-D04","M2-BB049-B10","M2-BB050-B10","M2-BB032-B10","M2-BB042-B10","M2-BB043-B10","M2-BB044-B10","M2-BB045-B10","M2-BB046-B10","M2-BB047-B10","M2-BB051-B10","M2-AP011-C06","M2-BR116-E03","M4-A1069-D04","CF0015","M2-AK032-E03","M2-BB056-B10","M2-BB057-B10","M2-BB055-B10","M2-BB054-B10"]
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -357,7 +345,6 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient()
 
-  // 1. SINGLE-REQUEST JOIN SUPER EFISIEN (Menarik Log, Master Part, dan Nama Leader)
   const { data: logs, error } = await supabase
     .from('production_logs')
     .select(`
@@ -369,7 +356,6 @@ export async function GET(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: 'Gagal menarik data log produksi' }, { status: 500 })
 
-  // 2. Tarik Referensi Master Parts Global (Untuk List Kaku Kolom ITEM Halaman 1)
   const { data: masterParts, error: masterError } = await supabase
     .from('master_parts')
     .select('part_number, part_type')
@@ -381,7 +367,6 @@ export async function GET(request: NextRequest) {
     partTypeMapping[p.part_number] = p.part_type || ''
   })
 
-  // 3. Tarik Nama Dept Head Langsung dari Session User yang login
   const { data: { user: authUser } } = await supabase.auth.getUser()
   
   let deptHeadName = '-'
@@ -397,7 +382,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 4. Transformasi Data Grouping Map
   const productionData: Record<string, any> = {}
 
   logs?.forEach((log: any) => {
@@ -410,7 +394,7 @@ export async function GET(request: NextRequest) {
         name: partInfo?.part_name || '',
         type: partInfo?.part_type || '',
         stockAwal: log.stock_awal,
-        shift1: null, // Diubah ke null agar tidak mengisi kolom kosong secara gaib
+        shift1: null,
         shift2: null,
         shift3: null,
       }
@@ -429,7 +413,7 @@ export async function GET(request: NextRequest) {
       sisa: sisaStok.toString(),
       leader: leaderFullName || '',
       operator: log.operator_name || '',
-      hasData: true // Flag penanda transaksi aktif di database
+      hasData: true
     }
   })
 
@@ -443,16 +427,10 @@ export async function GET(request: NextRequest) {
 
     const page1 = pdfDoc.addPage([842, 595])
     
-    // =========================================================================
-    // TAHAP A: IDENTITAS ATAS PERUSAHAAN (Halaman 1)
-    // =========================================================================
     page1.drawText("PT. MITRA METAL PERKASA", { x: 30, y: 575, size: 9, font: fontHelveticaBold })
     page1.drawText("LAPORAN PRODUKSI HARIAN PLATING", { x: 30, y: 562, size: 12, font: fontHelveticaBold })
     page1.drawText(`TANGGAL LOG: ${date}`, { x: 700, y: 565, size: 8, font: fontHelveticaBold })
 
-    // =========================================================================
-    // TAHAP B: PENGGAMBARAN HEADER TABEL LANDSCAPE (Halaman 1)
-    // =========================================================================
     const HEADER_Y = 535
     const TABLE_LEFT_X = 30;
     const TABLE_RIGHT_X = 812;
@@ -476,9 +454,6 @@ export async function GET(request: NextRequest) {
       page1.drawText("SISA", { x: startX + 118, y: HEADER_Y + 3, size: 5.5, font: fontHelveticaBold })
     })
 
-    // =========================================================================
-    // TAHAP C: AUTOMATION DATA TABEL 53 BARIS (Halaman 1)
-    // =========================================================================
     const START_Y = 524;  
     const ROW_GAP = 8.5;  
 
@@ -562,6 +537,9 @@ export async function GET(request: NextRequest) {
 
     const H2_X_HEADER = [75, 325, 575]    
     const H2_X_OK_CELL = [250, 480, 730]  
+    
+    // KOORDINAT BARU UNTUK NAMA OPERATOR (Diperkirakan di atas kolom pertama signature)
+    const H2_X_OPERATOR = [65, 310, 560]
     const H2_X_LEADER = [155, 390, 640]   
     const H2_X_DEPT    = [250, 495, 725]   
 
@@ -575,22 +553,17 @@ export async function GET(request: NextRequest) {
       const newPageIndex = pdfDoc.getPageCount() - 1
       const currentPage = pdfDoc.getPage(newPageIndex)
 
-      // 1. Stempel Parameter Tanggal Kerja Utama
       currentPage.drawText(date || '', { x: 70, y: 497, size: 8, font: fontHelveticaBold, color: rgb(0, 0, 0) })
 
-      // Loop paralel pengisian data internal 3 Shift kerja pabrik
       for (let shiftIdx = 0; shiftIdx < 3; shiftIdx++) {
         const shiftKey = `shift${shiftIdx + 1}`
         const sData = pData[shiftKey]
 
-        // GUARD CONDITION: Jika shift tidak memiliki input di database, biarkan kosong bersih!
         if (!sData || !sData.hasData) continue
 
-        // Cetak Identifikasi Barang Khusus Shift yang Aktif
         currentPage.drawText(pData.type, { x: H2_X_HEADER[shiftIdx], y: 468, size: 7.5, font: fontHelvetica, color: rgb(0, 0, 0) })
         currentPage.drawText(partNum, { x: H2_X_HEADER[shiftIdx], y: 453, size: 7.5, font: fontHelvetica, color: rgb(0, 0, 0) })
 
-        // Cetak jumlah output OK aktual (Ganti rgb(0,0,0) ke rgb(1,1,1) jika ingin teks putih)
         if (sData.ok && sData.ok !== '0') {
           currentPage.drawText(sData.ok, {
             x: H2_X_OK_CELL[shiftIdx] - (fontHelvetica.widthOfTextAtSize(sData.ok, 7.5) / 2),
@@ -601,7 +574,17 @@ export async function GET(request: NextRequest) {
           })
         }
 
-        // Cetak nama Leader Shift bersangkutan
+        // CETAK NAMA OPERATOR
+        if (sData.operator) {
+          currentPage.drawText(sData.operator, {
+            x: H2_X_OPERATOR[shiftIdx] - (fontHelvetica.widthOfTextAtSize(sData.operator, 7) / 2),
+            y: 145, // Sejajar dengan tanda tangan Leader
+            size: 7,
+            font: fontHelvetica,
+            color: rgb(0, 0, 0)
+          })
+        }
+
         if (sData.leader) {
           currentPage.drawText(sData.leader, {
             x: H2_X_LEADER[shiftIdx] - (fontHelvetica.widthOfTextAtSize(sData.leader, 7) / 2),
@@ -612,7 +595,6 @@ export async function GET(request: NextRequest) {
           })
         }
 
-        // Cetak nama Department Head penanggung jawab dari session user
         if (deptHeadName && deptHeadName !== '-') {
           currentPage.drawText(deptHeadName, {
             x: H2_X_DEPT[shiftIdx] - (fontHelvetica.widthOfTextAtSize(deptHeadName, 7) / 2),
@@ -624,36 +606,6 @@ export async function GET(request: NextRequest) {
         }
       }
     }
-
-    // =========================================================
-// //     // TRIK SEMENTARA: CETAK PETA KOORDINAT (GRID RAPAT)
-// //     // =========================================================
-// //     // Ambil SEMUA halaman yang sudah selesai digabungkan (termasuk duplikat hal 2)
-    // const allPages = pdfDoc.getPages();
-    
-    // allPages.forEach((page) => {
-    //   const { width, height } = page.getSize();
-      
-    //   // Gambar garis X (Mendatar/Kolom) tiap 10 poin
-    //   for (let x = 0; x <= width; x += 10) {
-    //     const isMajor = x % 50 === 0; // Garis tebal tiap 50
-    //     page.drawLine({ start: { x, y: 0 }, end: { x, y: height }, thickness: isMajor ? 0.5 : 0.1, color: rgb(1, 0, 0), opacity: isMajor ? 0.6 : 0.3 });
-    //   }
-
-    //   // Gambar garis Y (Menurun/Baris) tiap 10 poin beserta angkanya
-    //   for (let y = 0; y <= height; y += 10) {
-    //     const isMajor = y % 50 === 0; // Garis tebal tiap 50
-    //     page.drawLine({ start: { x: 0, y }, end: { x: width, y }, thickness: isMajor ? 0.5 : 0.1, color: rgb(1, 0, 0), opacity: isMajor ? 0.6 : 0.3 });
-        
-    //     // Hanya tulis teks angka di persimpangan garis besar (50x50) agar tidak menumpuk
-    //     if (isMajor) {
-    //       for (let x = 0; x <= width; x += 50) {
-    //         page.drawText(`${x},${y}`, { x: x + 1, y: y + 2, size: 6, color: rgb(1, 0, 0) });
-    //       }
-    //     }
-    //   }
-    // });
-// //     // =========================================================
 
     const pdfBytes = await pdfDoc.save()
 

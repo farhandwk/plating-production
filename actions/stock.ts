@@ -20,14 +20,18 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
   const shift = parseInt(formData.get('shift') as string)
   const formType = formData.get('form_type') as string 
   
+  // 👉 PERBAIKAN 1: Tangkap data nama operator dari form
+  const operator_name = formData.get('operator_name') as string
+
   // 2. Ambil Data Array (Bisa berisi lebih dari 1 material)
   const partIds = formData.getAll('part_id') as string[]
   const qtysIn = formData.getAll('qty_in') as string[]
   const qtysOutOk = formData.getAll('qty_out_ok') as string[]
   const qtysOutNg = formData.getAll('qty_out_ng') as string[]
 
-  if (!partIds.length || !date || !shift) {
-    return { error: 'Data Part, Tanggal, dan Shift wajib diisi minimal 1.' }
+  // 👉 PERBAIKAN 2: Tambahkan validasi agar operator_name tidak boleh kosong
+  if (!partIds.length || !date || !shift || !operator_name) {
+    return { error: 'Data Part, Tanggal, Shift, dan Nama Operator wajib diisi minimal 1.' }
   }
 
   // 3. Proses UPSERT satu per satu ke Database
@@ -60,16 +64,12 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
       stock_awal = existingLog.stock_awal 
     }
 
-    // ... [kode sebelumnya di dalam for loop tetap sama]
-
     // Ekstrak angka dari array berdasarkan index, fallback ke 0 jika kosong
     const inputQtyIn = qtysIn[i] ? parseInt(qtysIn[i]) : 0;
     const inputQtyOutOk = qtysOutOk[i] ? parseInt(qtysOutOk[i]) : 0;
     const inputQtyOutNg = qtysOutNg[i] ? parseInt(qtysOutNg[i]) : 0;
 
     // LOGIKA PENJUMLAHAN AKUMULATIF (MENGURANGI BEBAN KOGNITIF LEADER)
-    // Jika data sudah ada, sistem akan menjumlahkan nilai lama dengan input baru.
-    // Jika belum ada (undefined), sistem akan menganggap nilai lama adalah 0.
     const accumulatedQtyIn = formType === 'IN' 
       ? (existingLog?.qty_in || 0) + inputQtyIn 
       : (existingLog?.qty_in || 0);
@@ -91,7 +91,9 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
       qty_in: accumulatedQtyIn,
       qty_out_ok: accumulatedQtyOutOk,
       qty_out_ng: accumulatedQtyOutNg,
-      leader_id: user.id
+      leader_id: user.id,
+      // 👉 PERBAIKAN 3: Masukkan nama operator ke dalam payload Supabase
+      operator_name: operator_name 
     }
 
     const { error } = await supabase

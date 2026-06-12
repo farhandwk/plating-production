@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 
 type MasterPart = { id: string, part_name: string, part_type: string, part_number: string }
 const initialState: StockActionState = { error: '' }
@@ -19,6 +20,11 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
   
   const [activeTab, setActiveTab] = useState<'IN' | 'OUT'>('IN')
   
+  // 👉 PERBAIKAN: Jadikan Tanggal dan Shift sebagai Controlled State agar kebal dari reset UI
+  const today = new Date().toISOString().split('T')[0]
+  const [date, setDate] = useState(today)
+  const [shift, setShift] = useState("1")
+
   // State Array Dinamis untuk Form Multi-Material
   const [entries, setEntries] = useState([{ id: Date.now(), category: '' }])
   const uniquePartNames = Array.from(new Set(masterParts.map(p => p.part_name))).sort()
@@ -39,14 +45,14 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
 
   useEffect(() => {
     if (state.success) {
+      // HANYA reset kotak input material. Tanggal dan Shift akan tetap dipertahankan
+      // sesuai pilihan terakhir Leader (sangat mempermudah input massal dalam 1 shift).
       formRef.current?.reset()
       setEntries([{ id: Date.now(), category: '' }])
       const timer = setTimeout(() => state.success = '', 5000)
       return () => clearTimeout(timer)
     }
   }, [state.success])
-
-  const today = new Date().toISOString().split('T')[0]
 
   return (
     <Card className="w-full shadow-sm border-slate-200">
@@ -75,15 +81,21 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
         <form ref={formRef} action={formAction} className="space-y-6">
           <input type="hidden" name="form_type" value={activeTab} />
 
-          {/* REVISI: grid-cols diubah jadi 3 untuk memuat Input Nama Operator */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-slate-200">
+          {/* KONTROL UTAMA: Menggunakan properti 'value' dan 'onChange' */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-slate-200">
             <div className="space-y-2">
               <Label>Tanggal</Label>
-              <Input type="date" name="date" required defaultValue={today} />
+              <Input 
+                type="date" 
+                name="date" 
+                required 
+                value={date} 
+                onChange={(e) => setDate(e.target.value)} 
+              />
             </div>
             <div className="space-y-2">
               <Label>Shift Aktif</Label>
-              <Select name="shift" defaultValue="1" required>
+              <Select name="shift" value={shift} onValueChange={setShift} required>
                 <SelectTrigger><SelectValue placeholder="Pilih Shift" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="1">Shift 1</SelectItem>
@@ -92,14 +104,9 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
                 </SelectContent>
               </Select>
             </div>
-            {/* FITUR BARU: Input Nama Operator */}
-            <div className="space-y-2">
-              <Label>Nama Operator</Label>
-              <Input type="text" name="operator_name" placeholder="Misal: Budi Santoso" required className="border-slate-300 focus-visible:ring-blue-500" />
-            </div>
           </div>
 
-          {/* RENDER FORM DINAMIS */}
+          {/* RENDER FORM DINAMIS (MATERIAL) */}
           <div className="space-y-6">
             {entries.map((entry, index) => {
               const availableTypes = masterParts.filter(p => p.part_name === entry.category)
@@ -153,7 +160,7 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
                   )}
 
                   {activeTab === 'OUT' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-lg bg-emerald-50/50">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-lg bg-emerald-50/50">
                       <div className="space-y-2">
                         <Label className="text-emerald-700 font-bold">BARANG JADI (OUT OK)</Label>
                         <Input type="number" name="qty_out_ok" min="0" required placeholder="0" className="bg-white py-5 text-lg border-emerald-200 focus-visible:ring-emerald-500" />
@@ -161,6 +168,10 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
                       <div className="space-y-2">
                         <Label className="text-red-700 font-bold">BARANG CACAT (OUT NG)</Label>
                         <Input type="number" name="qty_out_ng" min="0" required placeholder="0" className="bg-white py-5 text-lg border-red-200 focus-visible:ring-red-500" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-slate-700 font-bold">NAMA OPERATOR</Label>
+                        <Input type="text" name="operator_name" placeholder="Nama Operator Mesin" required className="bg-white py-5 text-base border-slate-300 focus-visible:ring-emerald-500" />
                       </div>
                     </div>
                   )}

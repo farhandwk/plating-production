@@ -15,97 +15,55 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Sesi Anda telah berakhir. Silakan login kembali.' }
 
-  // 1. Ambil Data Global (Berlaku untuk semua material dalam satu batch)
   const date = formData.get('date') as string
   const shift = parseInt(formData.get('shift') as string)
   const formType = formData.get('form_type') as string 
-  
-  // 👉 PERBAIKAN 1: Tangkap data nama operator dari form
-  const operator_name = formData.get('operator_name') as string
 
-  // 2. Ambil Data Array (Bisa berisi lebih dari 1 material)
   const partIds = formData.getAll('part_id') as string[]
   const qtysIn = formData.getAll('qty_in') as string[]
   const qtysOutOk = formData.getAll('qty_out_ok') as string[]
   const qtysOutNg = formData.getAll('qty_out_ng') as string[]
+  const operatorNames = formData.getAll('operator_name') as string[]
 
-  // 👉 PERBAIKAN 2: Tambahkan validasi agar operator_name tidak boleh kosong
-  if (!partIds.length || !date || !shift || !operator_name) {
-    return { error: 'Data Part, Tanggal, Shift, dan Nama Operator wajib diisi minimal 1.' }
+  if (!partIds.length || !date || !shift) {
+    return { error: 'Data Part, Tanggal, dan Shift wajib diisi.' }
   }
 
-  // 3. Proses UPSERT satu per satu ke Database
-  for (let i = 0; i < partIds.length; i++) {
-    const part_id = partIds[i]
-    if (!part_id) continue; // Lewati jika ada baris kosong
-
-    const { data: existingLog } = await supabase
-      .from('production_logs')
-      .select('*')
-      .eq('date', date)
-      .eq('shift', shift)
-      .eq('part_id', part_id)
-      .single()
-
-    let stock_awal = 0;
-
-    if (!existingLog) {
-      const { data: previousLog } = await supabase
-        .from('production_logs')
-        .select('sisa')
-        .eq('part_id', part_id)
-        .order('date', { ascending: false })
-        .order('shift', { ascending: false })
-        .limit(1)
-        .single()
-      
-      stock_awal = previousLog?.sisa || 0 
-    } else {
-      stock_awal = existingLog.stock_awal 
+  // 1. KEMAS DATA MENJADI ARRAY JSON
+  const payload = partIds.map((part_id, index) => {
+    const targetOperatorName = operatorNames[index] ? (operatorNames[index] as string).trim() : ''
+    
+    // Kembalikan error langsung jika validasi gagal
+    if (formType === 'OUT' && !targetOperatorName) {
+      throw new Error(`Nama Operator pada material ke-${index + 1} tidak boleh kosong.`)
     }
 
-    // Ekstrak angka dari array berdasarkan index, fallback ke 0 jika kosong
-    const inputQtyIn = qtysIn[i] ? parseInt(qtysIn[i]) : 0;
-    const inputQtyOutOk = qtysOutOk[i] ? parseInt(qtysOutOk[i]) : 0;
-    const inputQtyOutNg = qtysOutNg[i] ? parseInt(qtysOutNg[i]) : 0;
-
-    // LOGIKA PENJUMLAHAN AKUMULATIF (MENGURANGI BEBAN KOGNITIF LEADER)
-    const accumulatedQtyIn = formType === 'IN' 
-      ? (existingLog?.qty_in || 0) + inputQtyIn 
-      : (existingLog?.qty_in || 0);
-
-    const accumulatedQtyOutOk = formType === 'OUT' 
-      ? (existingLog?.qty_out_ok || 0) + inputQtyOutOk 
-      : (existingLog?.qty_out_ok || 0);
-
-    const accumulatedQtyOutNg = formType === 'OUT' 
-      ? (existingLog?.qty_out_ng || 0) + inputQtyOutNg 
-      : (existingLog?.qty_out_ng || 0);
-
-    const payload = {
+    return {
       part_id,
       date,
       shift,
-      stock_awal,
-      target: 0, 
-      qty_in: accumulatedQtyIn,
-      qty_out_ok: accumulatedQtyOutOk,
-      qty_out_ng: accumulatedQtyOutNg,
+      form_type: formType,
       leader_id: user.id,
-      // 👉 PERBAIKAN 3: Masukkan nama operator ke dalam payload Supabase
-      operator_name: operator_name 
+      qty_in: qtysIn[index] ? parseInt(qtysIn[index]) : 0,
+      qty_out_ok: qtysOutOk[index] ? parseInt(qtysOutOk[index]) : 0,
+      qty_out_ng: qtysOutNg[index] ? parseInt(qtysOutNg[index]) : 0,
+      operator_name: formType === 'OUT' ? targetOperatorName : ''
     }
+  }).filter(item => item.part_id); // Abaikan baris material yang kosong
 
-    const { error } = await supabase
-      .from('production_logs')
-      .upsert(payload, { onConflict: 'date,shift,part_id' })
+  try {
+    // 2. TEMBAKKAN KE DATABASE (1x Panggilan Jaringan)
+    const { error } = await supabase.rpc('process_stock_batch', { payload })
 
     if (error) {
-      console.error(`Error upsert stock for part ${part_id}:`, error.message)
-      return { error: `Gagal menyimpan material ke-${i + 1}. Proses dihentikan.` }
+      console.error('RPC Error:', error.message)
+      return { error: 'Gagal merekam data ke database. Hubungi administrator.' }
     }
-  } // <-- Penutup for loop
 
-  revalidatePath('/leader/dashboard')
-  return { error: '', success: `${partIds.length} Data Material ${formType} berhasil direkam (ditambahkan ke total shift)!` }
+    revalidatePath('/leader/dashboard')
+    return { error: '', success: `${payload.length} Data Material ${formType} berhasil dikalkulasi dan direkam secara atomik!` }
+    
+  } catch (err: any) {
+    return { error: err.message || 'Terjadi kesalahan sistem.' }
+  }
 }

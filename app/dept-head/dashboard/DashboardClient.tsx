@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts'
 import { cn } from '@/lib/utils'
+import * as XLSX from 'xlsx' // 👉 IMPORT LIBRARY EXCEL
 
 // Palet warna kontras tinggi untuk multi-part bar chart
 const CHART_COLORS = [
@@ -108,6 +109,100 @@ export default function DashboardClient({ monthLogs, filteredLogs, masterParts, 
   const handleLegendClick = (e: any) => {
     const partName = e.value
     setHiddenParts(prev => ({ ...prev, [partName]: !prev[partName] }))
+  }
+
+  // ====================================================================
+  // EKSEKUSI UNDUH EXCEL
+  // ====================================================================
+  const handleDownloadExcel = () => {
+    if (!filteredLogs || filteredLogs.length === 0) {
+      alert("Tidak ada data untuk diekspor pada rentang tanggal ini.")
+      return
+    }
+
+    try {
+      // Mengubah array objek menjadi format sheet yang rapi, termasuk kolom Stok Awal & Sisa Stok
+      const excelData = filteredLogs.map((log: any, index: number) => {
+        const part = Array.isArray(log.master_parts) ? log.master_parts[0] : log.master_parts;
+        const user = Array.isArray(log.users) ? log.users[0] : log.users;
+        const sisaStok = log.stock_awal + log.qty_in - log.qty_out_ok - log.qty_out_ng;
+
+        return {
+          'No': index + 1,
+          'Tanggal': log.date,
+          'Shift': `Shift ${log.shift}`,
+          'Kode Part': part?.part_number || '-',
+          'Nama Part': part?.part_name || '-',
+          'Tipe': part?.part_type || '-',
+          'Stok Awal': log.stock_awal || 0,
+          'Masuk (IN)': log.qty_in || 0,
+          'Barang Jadi (OK)': log.qty_out_ok || 0,
+          'Barang Cacat (NG)': log.qty_out_ng || 0,
+          'Sisa Stok': sisaStok,
+          'Operator': log.operator_name || '-',
+          'Leader / Dept Head': user?.alias_name || user?.full_name || '-'
+        }
+      })
+
+      const worksheet = XLSX.utils.json_to_sheet(excelData)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Database Produksi')
+
+      const fileName = `Database_Produksi_MMP_${initialFrom}_sd_${initialTo}.xlsx`
+      XLSX.writeFile(workbook, fileName)
+    } catch (err: any) {
+      alert("Gagal mengunduh Excel: " + err.message)
+    }
+  }
+
+  // ====================================================================
+  // EKSEKUSI FORWARD WHATSAPP
+  // ====================================================================
+  const handleForwardWhatsApp = () => {
+    if (!isSingleDay) {
+      alert("⚠️ GAGAL MENERUSKAN\n\nRingkasan WA berformat Laporan Harian. Silakan atur rentang waktu menjadi tepat 1 hari saja.")
+      return
+    }
+
+    if (!filteredLogs || filteredLogs.length === 0) {
+      alert("Tidak ada catatan produksi untuk diteruskan.")
+      return
+    }
+
+    try {
+      let waText = `*LAPORAN PRODUKSI HARIAN PLATING*\n`
+      waText += `Tanggal: ${initialFrom}\n\n`
+
+      const shifts = [1, 2, 3]
+      shifts.forEach(shiftNum => {
+        // Cari data di filteredLogs berdasarkan shift
+        const shiftData = filteredLogs.filter((d: any) => d.shift === shiftNum)
+        
+        if (shiftData.length > 0) {
+          waText += `*SHIFT ${shiftNum}*\n`
+          shiftData.forEach((log: any) => {
+            const part = Array.isArray(log.master_parts) ? log.master_parts[0] : log.master_parts
+            const isInputMode = log.qty_in > 0;
+            
+            if (isInputMode) {
+              waText += `• ${part?.part_name}: IN ${log.qty_in}\n`
+            } else {
+              waText += `• ${part?.part_name}: OK ${log.qty_out_ok} | NG ${log.qty_out_ng}\n`
+            }
+          })
+          waText += `\n`
+        }
+      })
+
+      waText += `_Di-generate otomatis dari Dasbor Komando MMP_`
+
+      // Lempar ke Universal Forwarder WA
+      const encodedText = encodeURIComponent(waText)
+      const waUrl = `https://api.whatsapp.com/send?text=${encodedText}`
+      window.open(waUrl, '_blank')
+    } catch (err: any) {
+      alert("Gagal membuat ringkasan WA: " + err.message)
+    }
   }
 
   return (
@@ -320,21 +415,21 @@ export default function DashboardClient({ monthLogs, filteredLogs, masterParts, 
         
         <CardContent className="p-0 bg-white">
           <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-slate-50/80">
-                <TableRow>
-                  <TableHead className="w-[100px] text-center font-bold text-slate-700">Tanggal</TableHead>
-                  <TableHead className="w-[80px] text-center">Shift</TableHead>
-                  <TableHead className="min-w-[200px]">Identitas Part</TableHead>
-                  <TableHead className="text-center font-semibold text-slate-600">Stok Awal</TableHead>
-                  <TableHead className="text-center font-bold text-blue-600 bg-blue-50/50">IN</TableHead>
-                  <TableHead className="text-center font-bold text-emerald-600 bg-emerald-50/50">OUT (OK)</TableHead>
-                  <TableHead className="text-center font-bold text-red-600 bg-red-50/50">OUT (NG)</TableHead>
-                  <TableHead className="text-center font-bold text-slate-900 bg-slate-100">SISA STOK</TableHead>
-                  <TableHead className="min-w-[120px]">Leader</ TableHead>
-                  <TableHead className="min-w-[120px]">Operator</TableHead>
-                </TableRow>
-              </TableHeader>
+            <table className="w-full text-sm text-left text-slate-600">
+              <thead className="text-xs text-slate-700 uppercase bg-slate-50/80 border-b">
+                <tr>
+                  <th className="px-6 py-4 font-bold text-center">Tanggal</th>
+                  <th className="px-6 py-4 font-bold text-center">Shift</th>
+                  <th className="px-6 py-4 font-bold">Identitas Part</th>
+                  <th className="px-6 py-4 font-bold text-center">Stok Awal</th>
+                  <th className="px-6 py-4 font-bold text-center text-blue-600">IN</th>
+                  <th className="px-6 py-4 font-bold text-center text-emerald-600">OUT (OK)</th>
+                  <th className="px-6 py-4 font-bold text-center text-red-600">OUT (NG)</th>
+                  <th className="px-6 py-4 font-bold text-center text-slate-900">SISA STOK</th>
+                  <th className="px-6 py-4 font-bold">Leader</th>
+                  <th className="px-6 py-4 font-bold">Operator</th>
+                </tr>
+              </thead>
               <TableBody>
                 {filteredLogs.length === 0 ? (
                   <TableRow>
@@ -366,35 +461,48 @@ export default function DashboardClient({ monthLogs, filteredLogs, masterParts, 
                   })
                 )}
               </TableBody>
-            </Table>
+            </table>
           </div>
         </CardContent>
       </Card>
 
-      {/* KUMPULAN TOMBOL AKSI UNDUH LAPORAN (Sesuai Struktur Paling Bawah) */}
+      {/* KUMPULAN TOMBOL AKSI UNDUH LAPORAN */}
       <div className="flex flex-col sm:flex-row flex-wrap items-center justify-end gap-3 pt-2">
         <div className="flex flex-col items-center w-full sm:w-auto">
-          <Button disabled={!isSingleDay} asChild={isSingleDay} className={cn("w-full h-10 shadow-sm", isSingleDay ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-slate-100 text-slate-400")}>
+          <Button disabled={!isSingleDay} asChild={isSingleDay} className={cn("w-full h-10 shadow-sm", isSingleDay ? "bg-red-600 hover:bg-red-700 text-white" : "bg-slate-100 text-slate-400")}>
             {isSingleDay ? (
               <a href={`/api/export/pdf-harian?date=${initialFrom}`}>
-                <Printer className="w-4 h-4 mr-2" /> Cetak PDF Harian
+                <Printer className="w-4 h-4 mr-2" /> PDF Harian {isSingleDay ? `(${initialFrom})` : ''}
               </a>
             ) : (
               <div className="cursor-not-allowed flex items-center">
-                <Printer className="w-4 h-4 mr-2" /> Cetak PDF Harian
+                <Printer className="w-4 h-4 mr-2" /> PDF Harian
               </div>
             )}
           </Button>
           {!isSingleDay && <span className="text-[10px] text-red-500 font-bold mt-1 text-center">! Hanya untuk filter 1 hari</span>}
         </div>
 
-        <Button onClick={() => alert("Fitur Download Excel sedang dalam tahap pengembangan.")} variant="outline" className="h-10 w-full sm:w-auto border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-          <FileSpreadsheet className="w-4 h-4 mr-2" /> Download Excel
-        </Button>
+        <div className="flex flex-col items-center w-full sm:w-auto">
+          <Button 
+            onClick={handleDownloadExcel} 
+            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold h-10 w-full sm:w-auto shadow-sm"
+          >
+            <FileSpreadsheet className="w-4 h-4 mr-2" /> Download Excel
+          </Button>
+          {!isSingleDay && <span className="text-[10px] text-transparent font-bold mt-1 text-center">Spacer</span>}
+        </div>
 
-        <Button onClick={() => alert("Fitur Forward WhatsApp sedang dalam tahap pengembangan.")} variant="outline" className="h-10 w-full sm:w-auto border-green-200 text-green-700 hover:bg-green-50">
-          <Share2 className="w-4 h-4 mr-2" /> Forward WhatsApp
-        </Button>
+        <div className="flex flex-col items-center w-full sm:w-auto">
+          <Button 
+            onClick={handleForwardWhatsApp} 
+            disabled={!isSingleDay}
+            className={cn("w-full h-10 shadow-sm", isSingleDay ? "bg-[#25D366] hover:bg-[#1ebd57] text-white font-bold" : "bg-slate-100 text-slate-400 font-bold")}
+          >
+            <Share2 className="w-4 h-4 mr-2" /> WA {isSingleDay ? `(${initialFrom})` : ''}
+          </Button>
+          {!isSingleDay && <span className="text-[10px] text-red-500 font-bold mt-1 text-center">! Hanya untuk filter 1 hari</span>}
+        </div>
       </div>
 
     </div>

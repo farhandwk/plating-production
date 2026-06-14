@@ -350,7 +350,7 @@ export async function GET(request: NextRequest) {
     .select(`
       shift, stock_awal, qty_in, qty_out_ok, qty_out_ng, operator_name,
       master_parts!production_logs_part_id_fkey ( part_number, part_name, part_type ),
-      leader:users!production_logs_leader_id_fkey ( full_name )
+      leader:users!production_logs_leader_id_fkey ( alias_name )
     `)
     .eq('date', date)
 
@@ -373,12 +373,12 @@ export async function GET(request: NextRequest) {
   if (authUser) {
     const { data: currentUserProfile } = await supabase
       .from('users')
-      .select('full_name')
+      .select('full_name, alias_name')
       .eq('id', authUser.id)
       .maybeSingle()
     
     if (currentUserProfile) {
-      deptHeadName = currentUserProfile.full_name
+      deptHeadName = currentUserProfile.alias_name
     }
   }
 
@@ -404,14 +404,18 @@ export async function GET(request: NextRequest) {
     const shiftKey = `shift${log.shift}` as 'shift1' | 'shift2' | 'shift3'
     
     const leaderInfo = log.leader
-    const leaderFullName = Array.isArray(leaderInfo) ? leaderInfo[0]?.full_name : leaderInfo?.full_name
+    // Ambil alias_name, jika kosong ambil full_name, jika masih kosong gunakan string kosong
+    const leaderAlias = Array.isArray(leaderInfo) ? leaderInfo[0]?.alias_name : leaderInfo?.alias_name
+    const leaderFull = Array.isArray(leaderInfo) ? leaderInfo[0]?.full_name : leaderInfo?.full_name
+    
+    const leaderFinalName = leaderAlias || leaderFull?.split(' ')[0] || ''
 
     productionData[partNum][shiftKey] = {
       in: log.qty_in > 0 ? log.qty_in.toString() : '',
       ok: log.qty_out_ok > 0 ? log.qty_out_ok.toString() : '',
       ng: log.qty_out_ng > 0 ? log.qty_out_ng.toString() : '',
       sisa: sisaStok.toString(),
-      leader: leaderFullName || '',
+      leader: leaderFinalName,
       operator: log.operator_name || '',
       hasData: true
     }
@@ -537,11 +541,12 @@ export async function GET(request: NextRequest) {
 
     const H2_X_HEADER = [75, 325, 575]    
     const H2_X_OK_CELL = [250, 480, 730]  
+    const H2_X_NG_CELL = [250, 480, 730]  
     
     // KOORDINAT BARU UNTUK NAMA OPERATOR (Diperkirakan di atas kolom pertama signature)
-    const H2_X_OPERATOR = [65, 310, 560]
-    const H2_X_LEADER = [155, 390, 640]   
-    const H2_X_DEPT    = [250, 495, 725]   
+    const H2_X_OPERATOR = [60, 300, 540]
+    const H2_X_LEADER = [155, 397.5, 635]   
+    const H2_X_DEPT    = [250, 490, 735]   
 
     for (let i = 0; i < activePartNumbers.length; i++) {
       const partNum = activePartNumbers[i]
@@ -571,6 +576,16 @@ export async function GET(request: NextRequest) {
             size: 7.5,
             font: fontHelveticaBold,
             color: rgb(1, 1, 1) 
+          })
+        }
+        
+        if (sData.ng && sData.ng !== '0') {
+          currentPage.drawText(sData.ng, {
+            x: H2_X_NG_CELL[shiftIdx] - (fontHelvetica.widthOfTextAtSize(sData.ng, 7.5) / 2),
+            y: 363, // <- SILAKAN SESUAIKAN KOORDINAT Y INI
+            size: 7.5,
+            font: fontHelveticaBold,
+            color: rgb(1, 1, 1) // Saya buatkan warna merah (rgb 1,0,0) agar mudah Anda cari saat debugging posisi
           })
         }
 
@@ -606,6 +621,35 @@ export async function GET(request: NextRequest) {
         }
       }
     }
+
+//     // TRIK SEMENTARA: CETAK PETA KOORDINAT (GRID RAPAT)
+//     // =========================================================
+//     // Ambil SEMUA halaman yang sudah selesai digabungkan (termasuk duplikat hal 2)
+    // const allPages = pdfDoc.getPages();
+    
+    // allPages.forEach((page) => {
+    //   const { width, height } = page.getSize();
+      
+    //   // Gambar garis X (Mendatar/Kolom) tiap 10 poin
+    //   for (let x = 0; x <= width; x += 10) {
+    //     const isMajor = x % 50 === 0; // Garis tebal tiap 50
+    //     page.drawLine({ start: { x, y: 0 }, end: { x, y: height }, thickness: isMajor ? 0.5 : 0.1, color: rgb(1, 0, 0), opacity: isMajor ? 0.6 : 0.3 });
+    //   }
+
+    //   // Gambar garis Y (Menurun/Baris) tiap 10 poin beserta angkanya
+    //   for (let y = 0; y <= height; y += 10) {
+    //     const isMajor = y % 50 === 0; // Garis tebal tiap 50
+    //     page.drawLine({ start: { x: 0, y }, end: { x: width, y }, thickness: isMajor ? 0.5 : 0.1, color: rgb(1, 0, 0), opacity: isMajor ? 0.6 : 0.3 });
+        
+    //     // Hanya tulis teks angka di persimpangan garis besar (50x50) agar tidak menumpuk
+    //     if (isMajor) {
+    //       for (let x = 0; x <= width; x += 50) {
+    //         page.drawText(`${x},${y}`, { x: x + 1, y: y + 2, size: 6, color: rgb(1, 0, 0) });
+    //       }
+    //     }
+    //   }
+    // });
+//     // =========================================================
 
     const pdfBytes = await pdfDoc.save()
 

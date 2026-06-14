@@ -12,6 +12,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 
 type MasterPart = { id: string, part_name: string, part_type: string, part_number: string }
+
+type FormEntry = {
+  id: number
+  category: string
+  part_id: string
+  qty_in: number
+  qty_out_ok: number
+  qty_out_ng: number
+  operator_name: string
+}
+
 const initialState: StockActionState = { error: '' }
 
 export default function StockInputForm({ masterParts }: { masterParts: MasterPart[] }) {
@@ -20,17 +31,28 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
   
   const [activeTab, setActiveTab] = useState<'IN' | 'OUT'>('IN')
   
-  // 👉 PERBAIKAN: Jadikan Tanggal dan Shift sebagai Controlled State agar kebal dari reset UI
   const today = new Date().toISOString().split('T')[0]
   const [date, setDate] = useState(today)
   const [shift, setShift] = useState("1")
 
-  // State Array Dinamis untuk Form Multi-Material
-  const [entries, setEntries] = useState([{ id: Date.now(), category: '' }])
+  // State untuk mengontrol tampilan alert sukses agar tidak merusak objek state utama
+  const [successMessage, setSuccessMessage] = useState('')
+
+  const createEmptyEntry = (): FormEntry => ({
+    id: Date.now() + Math.random(),
+    category: '',
+    part_id: '',
+    qty_in: 0,
+    qty_out_ok: 0,
+    qty_out_ng: 0,
+    operator_name: ''
+  })
+
+  const [entries, setEntries] = useState<FormEntry[]>([createEmptyEntry()])
   const uniquePartNames = Array.from(new Set(masterParts.map(p => p.part_name))).sort()
 
   const handleAddEntry = () => {
-    setEntries([...entries, { id: Date.now(), category: '' }])
+    setEntries([...entries, createEmptyEntry()])
   }
 
   const handleRemoveEntry = (id: number) => {
@@ -39,17 +61,18 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
     }
   }
 
-  const updateEntryCategory = (id: number, value: string) => {
-    setEntries(entries.map(e => e.id === id ? { ...e, category: value } : e))
+  // 👉 PERBAIKAN 1: Menggunakan functional updater (prev) agar kebal dari race condition batching
+  const updateEntryField = (id: number, field: keyof FormEntry, value: any) => {
+    setEntries(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e))
   }
 
   useEffect(() => {
     if (state.success) {
-      // HANYA reset kotak input material. Tanggal dan Shift akan tetap dipertahankan
-      // sesuai pilihan terakhir Leader (sangat mempermudah input massal dalam 1 shift).
       formRef.current?.reset()
-      setEntries([{ id: Date.now(), category: '' }])
-      const timer = setTimeout(() => state.success = '', 5000)
+      setEntries([createEmptyEntry()])
+      setSuccessMessage(state.success)
+      // Gunakan local state beralih, jangan memutasi variabel state bawaan useActionState langsung
+      const timer = setTimeout(() => setSuccessMessage(''), 5000)
       return () => clearTimeout(timer)
     }
   }, [state.success])
@@ -65,7 +88,7 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
 
       <CardContent className="pt-6">
         {state.error && <div className="mb-6 p-3 bg-red-50 border border-red-100 text-red-600 rounded-md text-sm">{state.error}</div>}
-        {state.success && <div className="mb-6 p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-md text-sm font-semibold">{state.success}</div>}
+        {successMessage && <div className="mb-6 p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-md text-sm font-semibold">{successMessage}</div>}
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'IN' | 'OUT')} className="w-full mb-6">
           <TabsList className="grid w-full grid-cols-2 h-auto min-h-[3.5rem] bg-slate-100">
@@ -81,7 +104,6 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
         <form ref={formRef} action={formAction} className="space-y-6">
           <input type="hidden" name="form_type" value={activeTab} />
 
-          {/* KONTROL UTAMA: Menggunakan properti 'value' dan 'onChange' */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-slate-200">
             <div className="space-y-2">
               <Label>Tanggal</Label>
@@ -113,6 +135,14 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
               
               return (
                 <div key={entry.id} className="relative p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
+                  
+                  {/* Kebijakan Input Hidden agar data terekam utuh ke FormData Server Action */}
+                  <input type="hidden" name="part_id" value={entry.part_id} />
+                  <input type="hidden" name="qty_in" value={entry.qty_in} />
+                  <input type="hidden" name="qty_out_ok" value={entry.qty_out_ok} />
+                  <input type="hidden" name="qty_out_ng" value={entry.qty_out_ng} />
+                  <input type="hidden" name="operator_name" value={entry.operator_name} />
+
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-md text-xs tracking-wider">
                       MATERIAL #{index + 1}
@@ -127,7 +157,10 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div className="space-y-2">
                       <Label>Kategori Part</Label>
-                      <Select required value={entry.category} onValueChange={(v) => updateEntryCategory(entry.id, v)}>
+                      {/* 👉 PERBAIKAN 2: Pembaruan Kategori & Reset Spesifikasi digabung atomis dalam satu fungsi setter */}
+                      <Select required value={entry.category} onValueChange={(v) => {
+                        setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, category: v, part_id: '' } : e))
+                      }}>
                         <SelectTrigger><SelectValue placeholder="-- Pilih Kategori --" /></SelectTrigger>
                         <SelectContent>
                           {uniquePartNames.map(name => (
@@ -139,7 +172,7 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
                     
                     <div className="space-y-2">
                       <Label>Spesifikasi Part</Label>
-                      <Select name="part_id" required disabled={!entry.category}>
+                      <Select required disabled={!entry.category} value={entry.part_id} onValueChange={(v) => updateEntryField(entry.id, 'part_id', v)}>
                         <SelectTrigger><SelectValue placeholder="-- Pilih Spesifikasi --" /></SelectTrigger>
                         <SelectContent>
                           {availableTypes.map(part => (
@@ -152,29 +185,54 @@ export default function StockInputForm({ masterParts }: { masterParts: MasterPar
                     </div>
                   </div>
 
-                  {activeTab === 'IN' && (
-                    <div className="p-4 rounded-lg bg-blue-50/50 space-y-2">
-                      <Label className="text-blue-700 font-bold">MATERIAL MASUK (QTY IN)</Label>
-                      <Input type="number" name="qty_in" min="0" required placeholder="0" className="bg-white py-5 text-lg border-blue-200 focus-visible:ring-blue-500" />
-                    </div>
-                  )}
+                  {/* TAB PANEL 1: IN MATERIAL */}
+                  <div className={cn("p-4 rounded-lg bg-blue-50/50 space-y-2", activeTab !== 'IN' && "hidden")}>
+                    <Label className="text-blue-700 font-bold">MATERIAL MASUK (QTY IN)</Label>
+                    <Input 
+                      type="number" 
+                      min="0" 
+                      placeholder="0" 
+                      value={entry.qty_in === 0 ? '' : entry.qty_in}
+                      onChange={(e) => updateEntryField(entry.id, 'qty_in', parseInt(e.target.value) || 0)}
+                      className="bg-white py-5 text-lg border-blue-200 focus-visible:ring-blue-500" 
+                    />
+                  </div>
 
-                  {activeTab === 'OUT' && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-lg bg-emerald-50/50">
-                      <div className="space-y-2">
-                        <Label className="text-emerald-700 font-bold">BARANG JADI (OUT OK)</Label>
-                        <Input type="number" name="qty_out_ok" min="0" required placeholder="0" className="bg-white py-5 text-lg border-emerald-200 focus-visible:ring-emerald-500" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-red-700 font-bold">BARANG CACAT (OUT NG)</Label>
-                        <Input type="number" name="qty_out_ng" min="0" required placeholder="0" className="bg-white py-5 text-lg border-red-200 focus-visible:ring-red-500" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-slate-700 font-bold">NAMA OPERATOR</Label>
-                        <Input type="text" name="operator_name" placeholder="Nama Operator Mesin" required className="bg-white py-5 text-base border-slate-300 focus-visible:ring-emerald-500" />
-                      </div>
+                  {/* TAB PANEL 2: OUT MATERIAL */}
+                  <div className={cn("grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-lg bg-emerald-50/50", activeTab !== 'OUT' && "hidden")}>
+                    <div className="space-y-2">
+                      <Label className="text-emerald-700 font-bold">BARANG JADI (OUT OK)</Label>
+                      <Input 
+                        type="number" 
+                        min="0" 
+                        placeholder="0" 
+                        value={entry.qty_out_ok === 0 ? '' : entry.qty_out_ok}
+                        onChange={(e) => updateEntryField(entry.id, 'qty_out_ok', parseInt(e.target.value) || 0)}
+                        className="bg-white py-5 text-lg border-emerald-200 focus-visible:ring-emerald-500" 
+                      />
                     </div>
-                  )}
+                    <div className="space-y-2">
+                      <Label className="text-red-700 font-bold">BARANG CACAT (OUT NG)</Label>
+                      <Input 
+                        type="number" 
+                        min="0" 
+                        placeholder="0" 
+                        value={entry.qty_out_ng === 0 ? '' : entry.qty_out_ng}
+                        onChange={(e) => updateEntryField(entry.id, 'qty_out_ng', parseInt(e.target.value) || 0)}
+                        className="bg-white py-5 text-lg border-red-200 focus-visible:ring-red-500" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-slate-700 font-bold">NAMA OPERATOR</Label>
+                      <Input 
+                        type="text" 
+                        placeholder="Nama Operator Mesin" 
+                        value={entry.operator_name}
+                        onChange={(e) => updateEntryField(entry.id, 'operator_name', e.target.value)}
+                        className="bg-white py-5 text-base border-slate-300 focus-visible:ring-emerald-500" 
+                      />
+                    </div>
+                  </div>
                 </div>
               )
             })}

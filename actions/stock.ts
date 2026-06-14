@@ -12,13 +12,14 @@ export type StockActionState = {
 export async function submitStockLog(prevState: StockActionState, formData: FormData): Promise<StockActionState> {
   const supabase = await createClient()
   
+  // 1. Validasi Sesi Pengguna
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Sesi Anda telah berakhir. Silakan login kembali.' }
 
   const date = formData.get('date') as string
   const shift = parseInt(formData.get('shift') as string)
-  const formType = formData.get('form_type') as string 
 
+  // Ambil seluruh array dinamis dari form komponen
   const partIds = formData.getAll('part_id') as string[]
   const qtysIn = formData.getAll('qty_in') as string[]
   const qtysOutOk = formData.getAll('qty_out_ok') as string[]
@@ -29,30 +30,62 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
     return { error: 'Data Part, Tanggal, dan Shift wajib diisi.' }
   }
 
-  // 1. KEMAS DATA MENJADI ARRAY JSON
-  const payload = partIds.map((part_id, index) => {
+  // Array penampung payload akhir untuk dikirim ke RPC Supabase
+  const payload: any[] = []
+
+  // 2. LOGIKA PILAH DATA MANDIRI (INTELLIGENT SPLIT)
+  for (let index = 0; index < partIds.length; index++) {
+    const part_id = partIds[index]
+    if (!part_id) continue // Lewati jika baris material kosong
+
+    const qtyIn = qtysIn[index] ? parseInt(qtysIn[index]) : 0
+    const qtyOutOk = qtysOutOk[index] ? parseInt(qtysOutOk[index]) : 0
+    const qtyOutNg = qtysOutNg[index] ? parseInt(qtysOutNg[index]) : 0
     const targetOperatorName = operatorNames[index] ? (operatorNames[index] as string).trim() : ''
-    
-    // Kembalikan error langsung jika validasi gagal
-    if (formType === 'OUT' && !targetOperatorName) {
-      throw new Error(`Nama Operator pada material ke-${index + 1} tidak boleh kosong.`)
+
+    // Skenario A: Jika baris ini mengisi data Material Masuk (IN)
+    if (qtyIn > 0) {
+      payload.push({
+        part_id,
+        date,
+        shift,
+        form_type: 'IN', // Dikunci sebagai IN agar database tidak memicu hitungan/kunci produksi harian
+        leader_id: user.id,
+        qty_in: qtyIn,
+        qty_out_ok: 0,
+        qty_out_ng: 0,
+        operator_name: '' // Logistik masuk tidak memerlukan nama operator mesin
+      })
     }
 
-    return {
-      part_id,
-      date,
-      shift,
-      form_type: formType,
-      leader_id: user.id,
-      qty_in: qtysIn[index] ? parseInt(qtysIn[index]) : 0,
-      qty_out_ok: qtysOutOk[index] ? parseInt(qtysOutOk[index]) : 0,
-      qty_out_ng: qtysOutNg[index] ? parseInt(qtysOutNg[index]) : 0,
-      operator_name: formType === 'OUT' ? targetOperatorName : ''
+    // Skenario B: Jika baris ini mengisi data Hasil Laporan Produksi (OUT)
+    if (qtyOutOk > 0 || qtyOutNg > 0) {
+      // Validasi ketat nama operator HANYA berlaku jika ada hasil produksi keluar
+      if (!targetOperatorName) {
+        return { error: `Nama Operator pada Material #${index + 1} wajib diisi untuk pelaporan hasil produksi (OUT).` }
+      }
+
+      payload.push({
+        part_id,
+        date,
+        shift,
+        form_type: 'OUT', // Ditandai sebagai OUT agar database memproses akumulasi performa & defect rate
+        leader_id: user.id,
+        qty_in: 0,
+        qty_out_ok: qtyOutOk,
+        qty_out_ng: qtyOutNg,
+        operator_name: targetOperatorName
+      })
     }
-  }).filter(item => item.part_id); // Abaikan baris material yang kosong
+  }
+
+  // Jika setelah diperiksa ternyata form kosong semua (hanya isi angka 0)
+  if (payload.length === 0) {
+    return { error: 'Silakan isi jumlah kuantitas kuantitatif (IN/OK/NG) sebelum menyimpan data.' }
+  }
 
   try {
-    // 2. TEMBAKKAN KE DATABASE (1x Panggilan Jaringan)
+    // 3. TEMBAKKAN DATA KE DATABASE SECARA ATOMIK (1x Jaringan)
     const { error } = await supabase.rpc('process_stock_batch', { payload })
 
     if (error) {
@@ -61,9 +94,9 @@ export async function submitStockLog(prevState: StockActionState, formData: Form
     }
 
     revalidatePath('/leader/dashboard')
-    return { error: '', success: `${payload.length} Data Material ${formType} berhasil dikalkulasi dan direkam secara atomik!` }
+    return { error: '', success: `Berhasil memproses dan merekam ${payload.length} log pergerakan material (IN/OUT) secara atomik!` }
     
   } catch (err: any) {
-    return { error: err.message || 'Terjadi kesalahan sistem.' }
+    return { error: err.message || 'Terjadi kesalahan sistem internal.' }
   }
 }

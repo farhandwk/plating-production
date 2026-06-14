@@ -5,10 +5,10 @@ import MasterDataClient from '@/components/features/MasterDataClient'
 export default async function MasterDataPage() {
   const supabase = await createClient()
 
-  // Ambil data master_parts dan urutkan berdasarkan nama kategori, lalu spesifikasinya
+  // 👉 PERBAIKAN: Saring dan sertakan kolom current_stock dalam pemanggilan data
   const { data: parts, error } = await supabase
     .from('master_parts')
-    .select('id, part_name, part_type, part_number')
+    .select('id, part_name, part_type, part_number, current_stock') 
     .order('part_name', { ascending: true })
     .order('part_type', { ascending: true })
 

@@ -11,8 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Trash2, Plus, DatabaseBackup, Pencil, Filter } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-type MasterPart = { id: string, part_name: string, part_type: string, part_number: string }
+// 👉 PERBAIKAN 1: Perbarui tipe data struktur agar menerima current_stock secara ketat
+type MasterPart = { id: string, part_name: string, part_type: string, part_number: string, current_stock: number }
 const initialState: MasterActionState = { error: '' }
 
 export default function MasterDataClient({ initialParts }: { initialParts: MasterPart[] }) {
@@ -133,7 +135,7 @@ export default function MasterDataClient({ initialParts }: { initialParts: Maste
       {editState.success && <div className="p-4 bg-blue-50 text-blue-700 font-semibold border border-blue-200 rounded-lg shadow-sm">{editState.success}</div>}
       {deleteStatus && <div className="p-4 bg-amber-50 text-amber-700 font-semibold border border-amber-200 rounded-lg shadow-sm">{deleteStatus}</div>}
 
-      {/* TABEL DATA MASTER (Menggunakan data ter-filter) */}
+      {/* TABEL DATA MASTER */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
@@ -143,45 +145,69 @@ export default function MasterDataClient({ initialParts }: { initialParts: Maste
                 <TableHead>Kategori Part</TableHead>
                 <TableHead>Spesifikasi Detail</TableHead>
                 <TableHead>Nomor Part</TableHead>
+                {/* 👉 PERBAIKAN 2: Tambah Kolom Header untuk Stok */}
+                <TableHead className="text-center font-bold text-slate-700">Stok Gudang Terkini</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredParts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center h-32 text-slate-500">Tidak ada material yang cocok dengan filter.</TableCell>
+                  {/* 👉 PERBAIKAN 3: Ubah colSpan dari 5 menjadi 6 agar kolom rata */}
+                  <TableCell colSpan={6} className="text-center h-32 text-slate-500">Tidak ada material yang cocok dengan filter.</TableCell>
                 </TableRow>
               ) : (
-                filteredParts.map((part, index) => (
-                  <TableRow key={part.id} className="hover:bg-slate-50 transition-colors">
-                    <TableCell className="text-center font-medium text-slate-500">{index + 1}</TableCell>
-                    <TableCell className="font-bold text-slate-800">{part.part_name}</TableCell>
-                    <TableCell className="text-slate-600">{part.part_type}</TableCell>
-                    <TableCell className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-100 px-2 py-1 rounded w-max inline-block mt-2.5">
-                      {part.part_number}
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      {/* Tombol Edit */}
-                      <Button 
-                        variant="ghost" size="icon" 
-                        onClick={() => setEditingPart(part)}
-                        className="text-amber-500 hover:text-amber-700 hover:bg-amber-50 mr-1"
-                        title="Edit Part"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      {/* Tombol Hapus */}
-                      <Button 
-                        variant="ghost" size="icon" 
-                        onClick={() => handleDelete(part.id, part.part_type)}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                        title="Hapus Part"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                filteredParts.map((part, index) => {
+                  const stockValue = part.current_stock ?? 0
+                  
+                  return (
+                    <TableRow key={part.id} className="hover:bg-slate-50 transition-colors">
+                      <TableCell className="text-center font-medium text-slate-500">{index + 1}</TableCell>
+                      <TableCell className="font-bold text-slate-800">{part.part_name}</TableCell>
+                      <TableCell className="text-slate-600">{part.part_type}</TableCell>
+                      <TableCell>
+                        <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-100 px-2 py-1 rounded">
+                          {part.part_number}
+                        </span>
+                      </TableCell>
+                      
+                      {/* 👉 PERBAIKAN 4: Render Angka Stok Dengan Badge Adaptif Kontras Tinggi */}
+                      <TableCell className="text-center">
+                        <span className={cn(
+                          "px-3 py-1.5 rounded-md text-sm font-black border tracking-wider",
+                          stockValue > 0 
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                            : stockValue < 0
+                              ? "bg-red-50 text-red-600 border-red-200" 
+                              : "bg-slate-100 text-slate-600 border-slate-300"
+                        )}>
+                          {stockValue.toLocaleString('id-ID')} Pcs
+                        </span>
+                      </TableCell>
+
+                      <TableCell className="text-right whitespace-nowrap">
+                        {/* Tombol Edit */}
+                        <Button 
+                          variant="ghost" size="icon" 
+                          onClick={() => setEditingPart(part)}
+                          className="text-amber-500 hover:text-amber-700 hover:bg-amber-50 mr-1"
+                          title="Edit Part"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        {/* Tombol Hapus */}
+                        <Button 
+                          variant="ghost" size="icon" 
+                          onClick={() => handleDelete(part.id, part.part_type)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          title="Hapus Part"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
               )}
             </TableBody>
           </Table>

@@ -170,7 +170,7 @@ export default function ProductionHistoryPage() {
   }
 
   // ====================================================================
-  // EKSEKUSI 3: GENERATE RINGKASAN & FORWARD KE WHATSAPP
+  // EKSEKUSI 3: GENERATE RINGKASAN & FORWARD KE WHATSAPP (DI-UPGRADE)
   // ====================================================================
   const handleForwardWhatsApp = async () => {
     if (!isValidSingleDay) {
@@ -184,7 +184,7 @@ export default function ProductionHistoryPage() {
         .from('production_logs')
         .select(`
           shift, qty_in, qty_out_ok, qty_out_ng,
-          master_parts!inner(part_name, part_number)
+          master_parts!inner(part_name, part_number, part_type)
         `)
         .eq('date', targetDownloadDate)
         .order('shift', { ascending: true })
@@ -204,17 +204,38 @@ export default function ProductionHistoryPage() {
         const shiftData = data.filter(d => d.shift === shiftNum)
         if (shiftData.length > 0) {
           waText += `*SHIFT ${shiftNum}*\n`
+          
+          // Variabel penampung total untuk shift ini
+          let shiftTotalIn = 0;
+          let shiftTotalOk = 0;
+          let shiftTotalNg = 0;
+
           shiftData.forEach(log => {
             const part = Array.isArray(log.master_parts) ? log.master_parts[0] : log.master_parts
-            const isInputMode = log.qty_in > 0;
             
-            if (isInputMode) {
-              waText += `• ${part?.part_name}: IN ${log.qty_in}\n`
-            } else {
-              waText += `• ${part?.part_name}: OK ${log.qty_out_ok} | NG ${log.qty_out_ng}\n`
+            // Menggunakan part_type sebagai standar laporan WA yang baru
+            let rowText = `• ${part?.part_type || '-'}: `
+            const details = [] 
+            
+            // 1. Cek dan akumulasi data IN
+            if (log.qty_in > 0) {
+              details.push(`IN ${log.qty_in}`)
+              shiftTotalIn += (log.qty_in || 0)
             }
+            
+            // 2. Cek dan akumulasi data OUT (OK atau NG)
+            if (log.qty_out_ok > 0 || log.qty_out_ng > 0) {
+              details.push(`OK ${log.qty_out_ok || 0} | NG ${log.qty_out_ng || 0}`)
+              shiftTotalOk += (log.qty_out_ok || 0)
+              shiftTotalNg += (log.qty_out_ng || 0)
+            }
+            
+            waText += rowText + details.join(' ⸺ ') + '\n'
           })
-          waText += `\n`
+
+          // Tambahkan baris TOTAL di bagian bawah setiap shift
+          waText += `\n*TOTAL SHIFT ${shiftNum}:*\n`
+          waText += `IN: *${shiftTotalIn}* | OK: *${shiftTotalOk}* | NG: *${shiftTotalNg}*\n\n`
         }
       })
 

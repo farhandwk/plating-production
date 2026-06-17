@@ -156,7 +156,7 @@ export default function DashboardClient({ monthLogs, filteredLogs, masterParts, 
   }
 
   // ====================================================================
-  // EKSEKUSI FORWARD WHATSAPP
+  // EKSEKUSI FORWARD WHATSAPP (FIXED - DENGAN TOTAL PER SHIFT)
   // ====================================================================
   const handleForwardWhatsApp = () => {
     if (!isSingleDay) {
@@ -180,21 +180,43 @@ export default function DashboardClient({ monthLogs, filteredLogs, masterParts, 
         
         if (shiftData.length > 0) {
           waText += `*SHIFT ${shiftNum}*\n`
+          
+          // Variabel penampung total untuk shift ini
+          let shiftTotalIn = 0;
+          let shiftTotalOk = 0;
+          let shiftTotalNg = 0;
+          
           shiftData.forEach((log: any) => {
+            // Ambil relasi objek master_parts
             const part = Array.isArray(log.master_parts) ? log.master_parts[0] : log.master_parts
-            const isInputMode = log.qty_in > 0;
             
-            if (isInputMode) {
-              waText += `• ${part?.part_name}: IN ${log.qty_in}\n`
-            } else {
-              waText += `• ${part?.part_name}: OK ${log.qty_out_ok} | NG ${log.qty_out_ng}\n`
+            let rowText = `• ${part?.part_type || '-'}: `
+            const details = [] 
+            
+            // 1. Cek dan akumulasi data IN
+            if (log.qty_in > 0) {
+              details.push(`IN ${log.qty_in}`)
+              shiftTotalIn += log.qty_in // Tambahkan ke total shift
             }
+            
+            // 2. Cek dan akumulasi data OUT (OK atau NG)
+            if (log.qty_out_ok > 0 || log.qty_out_ng > 0) {
+              details.push(`OK ${log.qty_out_ok} | NG ${log.qty_out_ng}`)
+              shiftTotalOk += log.qty_out_ok // Tambahkan ke total shift
+              shiftTotalNg += log.qty_out_ng // Tambahkan ke total shift
+            }
+            
+            // Gabungkan nama material dengan detail mutasinya
+            waText += rowText + details.join(' ⸺ ') + '\n'
           })
-          waText += `\n`
+          
+          // 👉 Tambahkan baris TOTAL di bagian bawah setiap shift
+          waText += `\n*TOTAL SHIFT ${shiftNum}:*\n`
+          waText += `IN: *${shiftTotalIn}* | OK: *${shiftTotalOk}* | NG: *${shiftTotalNg}*\n\n`
         }
       })
 
-      waText += `_Di-generate otomatis dari Dasbor Komando MMP_`
+      waText += `_Di-generate otomatis dari Pusat Komando MMP_`
 
       // Lempar ke Universal Forwarder WA
       const encodedText = encodeURIComponent(waText)

@@ -4,7 +4,7 @@
 import React, { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
-import { Printer, FileSpreadsheet, Share2, LogOut, Package, CheckCircle2, AlertTriangle, TrendingDown, Activity, BarChart3, Calendar as CalendarIcon } from 'lucide-react'
+import { Printer, FileSpreadsheet, Share2, LogOut, Package, CheckCircle2, AlertTriangle, TrendingDown, Activity, BarChart3, Calendar as CalendarIcon, Target } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -45,6 +45,41 @@ export default function DashboardClient({ monthLogs, filteredLogs, masterParts, 
   const totalOutNg = monthLogs.reduce((sum: number, log: any) => sum + (log.qty_out_ng || 0), 0)
   const totalProduction = totalOutOk + totalOutNg
   const defectRate = totalProduction > 0 ? ((totalOutNg / totalProduction) * 100).toFixed(1) : "0.0"
+
+  // --- KALKULASI ACHIEVEMENT PER PART ---
+  const achievementPerPart = useMemo(() => {
+    const partMap: Record<string, any> = {}
+
+    // 1. Inisialisasi data dari masterParts agar part yang belum ada produksinya tetap muncul
+    masterParts.forEach((p: any) => {
+      if (p.part_name) {
+        partMap[p.part_name] = {
+          part_name: p.part_name,
+          part_type: p.part_type,
+          // TODO: Ganti '10000' dengan 'p.target_produksi' jika Anda sudah punya kolom target di tabel master_parts database Anda.
+          target: p.target || 1000, 
+          qty_ok: 0,
+        }
+      }
+    })
+
+    // 2. Akumulasi jumlah Qty OK dari monthLogs
+    monthLogs.forEach((log: any) => {
+      const pName = Array.isArray(log.master_parts) ? log.master_parts[0]?.part_name : log.master_parts?.part_name
+      if (pName && partMap[pName]) {
+        partMap[pName].qty_ok += (log.qty_out_ok || 0)
+      }
+    })
+
+    // 3. Hitung persentase dan ubah ke array
+    return Object.values(partMap).map((item: any) => {
+      const percentage = item.target > 0 ? (item.qty_ok / item.target) * 100 : 0
+      return {
+        ...item,
+        achievement: percentage
+      }
+    }).sort((a, b) => b.achievement - a.achievement) // Urutkan dari pencapaian tertinggi ke terendah
+  }, [monthLogs, masterParts])
 
   // --- EKSTRAK DAFTAR PART YANG AKTIF SEBAGAI MULTI-LINE/BAR ---
   const activeParts = useMemo(() => {
@@ -308,6 +343,81 @@ export default function DashboardClient({ monthLogs, filteredLogs, masterParts, 
           </CardContent>
         </Card>
       </div>
+
+      {/* LAPORAN PENCAPAIAN PRODUKSI PER PART (ACHIEVEMENT REPORT) */}
+      <Card className="shadow-sm border-slate-200 bg-white">
+        <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-2">
+            <Target className="w-5 h-5 text-indigo-600" />
+            <CardTitle className="text-base">Production Achievement Report (Bulanan)</CardTitle>
+          </div>
+          <CardDescription>Persentase QTY OUT OK dibandingkan dengan Target Produksi Bulanan per komponen.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {/* Batasi tinggi tabel agar bisa di-scroll jika part sangat banyak */}
+          <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+            <table className="w-full text-sm text-left text-slate-600">
+              <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
+                <tr>
+                  <th className="px-6 py-3 font-bold">Identitas Part</th>
+                  <th className="px-6 py-3 font-bold text-center">Target (Pcs)</th>
+                  <th className="px-6 py-3 font-bold text-center text-emerald-600">Aktual OK</th>
+                  <th className="px-6 py-3 font-bold w-1/3">Status Pencapaian (Achievement)</th>
+                </tr>
+              </thead>
+              <TableBody>
+                {achievementPerPart.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center text-slate-500">Tidak ada data part.</TableCell>
+                  </TableRow>
+                ) : (
+                  achievementPerPart.map((item: any, idx: number) => {
+                    const achValue = Number(item.achievement.toFixed(1));
+                    // Logika warna dinamis berdasarkan persentase
+                    const barColor = 
+                      achValue >= 100 ? "bg-emerald-500" : 
+                      achValue >= 80 ? "bg-indigo-500" : 
+                      achValue >= 50 ? "bg-amber-400" : "bg-red-500";
+                    
+                    const textColor = 
+                      achValue >= 100 ? "text-emerald-700" : 
+                      achValue >= 80 ? "text-indigo-700" : 
+                      achValue >= 50 ? "text-amber-700" : "text-red-700";
+
+                    return (
+                      <TableRow key={idx} className="hover:bg-slate-50/50 border-b border-slate-50 last:border-0">
+                        <TableCell className="px-6 py-3">
+                          <div className="font-bold text-slate-800">{item.part_name}</div>
+                          <div className="text-[11px] text-slate-500">{item.part_type}</div>
+                        </TableCell>
+                        <TableCell className="px-6 py-3 text-center font-medium">
+                          {item.target.toLocaleString('id-ID')}
+                        </TableCell>
+                        <TableCell className="px-6 py-3 text-center font-bold text-emerald-700">
+                          {item.qty_ok.toLocaleString('id-ID')}
+                        </TableCell>
+                        <TableCell className="px-6 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-full bg-slate-200 rounded-full h-2.5">
+                              <div 
+                                className={cn("h-2.5 rounded-full transition-all duration-1000", barColor)} 
+                                style={{ width: `${Math.min(achValue, 100)}%` }} // Max width 100% agar tidak luber
+                              ></div>
+                            </div>
+                            <span className={cn("font-bold text-xs min-w-[45px] text-right", textColor)}>
+                              {achValue}%
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* PANEL FILTER (Kaku Vertikal di Mobile & Tablet demi Keamanan Layout) */}
       <Card className="shadow-sm border-slate-200">

@@ -3,7 +3,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Database, History, Users } from 'lucide-react'
+import { LayoutDashboard, Database, History, Users, ChartNoAxesCombined } from 'lucide-react'
 
 export default function DeptHeadNav() {
   // Hook ini akan selalu mendeteksi URL aktif saat ini
@@ -12,6 +12,7 @@ export default function DeptHeadNav() {
   // Daftar menu untuk mempermudah perulangan (mapping)
   const navItems = [
     { name: 'Monitoring Matriks', href: '/dept-head/dashboard', icon: LayoutDashboard },
+    { name: 'Analytics', href: '/dept-head/analytics', icon: ChartNoAxesCombined },
     { name: 'Master Data', href: '/dept-head/master-data', icon: Database },
     { name: 'Riwayat Produksi', href: '/dept-head/riwayat-produksi', icon: History },
     { name: 'Kelola Pengguna', href: '/dept-head/users', icon: Users },

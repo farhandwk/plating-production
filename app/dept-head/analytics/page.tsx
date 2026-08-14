@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import MonthlyAnalysisClient from './client-components/PerformanceClient'
 import ShiftComparisonClient from './client-components/ShiftComparisonClient'
 import PeriodFilter from './client-components/PeriodFilter'
+import StockCoverageClient from './client-components/StockCoverageClient'
 
 export default async function MonthlyAnalysisPage(props: {
   searchParams: Promise<{ month?: string; year?: string }>
@@ -57,6 +58,10 @@ export default async function MonthlyAnalysisPage(props: {
     .lte('date', lastDayOfMonth)
     .not('qty_in', 'is', null)
 
+  // 4. Pemanggilan RPC untuk Day of Supply 
+  const { data: stockCoverage } = await supabase
+    .rpc('get_stock_coverage', { p_lookback_days: 14 })
+
   return (
     <div className="space-y-6 p-4 md:p-6 pb-10 bg-slate-50/50 min-h-screen">
       {/* HEADER + FILTER — satu-satunya sumber kontrol periode untuk kedua tabel */}
@@ -82,6 +87,10 @@ export default async function MonthlyAnalysisPage(props: {
         logs={shiftLogs || []}
         periodName={periodName}
       />
+
+      <StockCoverageClient data={
+        stockCoverage || []
+      }/>
     </div>
   )
 }
